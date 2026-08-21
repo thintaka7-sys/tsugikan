@@ -22,7 +22,7 @@ export const ScanConfirmView: React.FC<ScanConfirmViewProps> = ({
 
   const [title, setTitle] = useState(parsedResult.seriesTitle || bookData.title);
   const [volumeStr, setVolumeStr] = useState(
-    parsedResult.volume !== null ? String(parsedResult.volume) : '1'
+    parsedResult.volume !== null ? String(parsedResult.volume) : ''
   );
   const [error, setError] = useState('');
 
@@ -58,6 +58,11 @@ export const ScanConfirmView: React.FC<ScanConfirmViewProps> = ({
     }
   }
 
+  const handleSetSingleVolume = () => {
+    setVolumeStr('1');
+    if (error) setError('');
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanTitle = title.trim();
@@ -67,7 +72,7 @@ export const ScanConfirmView: React.FC<ScanConfirmViewProps> = ({
     }
 
     if (!isValidVolume) {
-      setError('巻数は1以上の整数を入力してください');
+      setError('巻数を入力するか、「巻数のない本として登録する」を選択してください');
       return;
     }
 
@@ -150,6 +155,7 @@ export const ScanConfirmView: React.FC<ScanConfirmViewProps> = ({
               type="number"
               min="1"
               step="1"
+              placeholder="例: 1"
               className="form-input"
               value={volumeStr}
               onChange={(e) => {
@@ -158,6 +164,16 @@ export const ScanConfirmView: React.FC<ScanConfirmViewProps> = ({
               }}
               required
             />
+            {(!volumeStr || volumeStr === '') && (
+              <button
+                type="button"
+                className="text-link-button single-volume-btn"
+                style={{ textAlign: 'left', padding: '4px 0', marginTop: '4px' }}
+                onClick={handleSetSingleVolume}
+              >
+                巻数のない本（単巻）として登録する（1巻として設定）
+              </button>
+            )}
           </div>
 
           <div className="form-actions">

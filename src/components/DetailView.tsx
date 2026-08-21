@@ -48,6 +48,9 @@ export const DetailView: React.FC<DetailViewProps> = ({
   const maxOwned = getMaxVolume(series.ownedVolumes);
   const maxRead = getMaxVolume(series.readVolumes);
   const missingVolumes = getMissingVolumes(series.ownedVolumes);
+  const unreadVolumes = series.ownedVolumes
+    .filter((v) => !series.readVolumes.includes(v))
+    .sort((a, b) => a - b);
   const spineIndex = getSpineIndex(series.id);
 
   const [editTitle, setEditTitle] = useState(series.title);
@@ -303,6 +306,13 @@ export const DetailView: React.FC<DetailViewProps> = ({
                 <span className="shelf-visual-title">棚の状況</span>
                 <span className="shelf-max-status">{maxOwned}巻まで</span>
               </div>
+
+              {/* 未読の巻範囲表示（未読が0件のときは非表示） */}
+              {unreadVolumes.length > 0 && (
+                <p className="shelf-unread-line">
+                  未読：{formatMissingVolumes(unreadVolumes)}巻
+                </p>
+              )}
 
               {/* ① 抜けなし */}
               {missingVolumes.length === 0 && maxOwned > 0 && (

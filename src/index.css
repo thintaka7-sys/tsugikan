@@ -521,6 +521,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: relative;
 }
 
 .shelf-visual-header {
@@ -561,6 +562,13 @@ button {
 .shelf-complete-text {
   font-size: 0.95rem;
   color: var(--color-paper);
+}
+
+.shelf-unread-line {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-paper-dim);
+  padding: 2px 0;
 }
 
 /* ② 抜けあり & <=30巻: 背表紙並び */

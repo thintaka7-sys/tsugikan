@@ -52,8 +52,29 @@ function parseKanjiNumber(str: string): number | null {
 }
 
 /**
+ * 文字列が純粋な巻数表現のみで構成されているかを判定
+ * （「外伝」「公式ファンブック」などの文字が混入している場合は false）
+ */
+export function isPureVolumeRemainder(text: string): boolean {
+  if (!text) return false;
+  const clean = text
+    .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xfee0))
+    .replace(/[＃]/g, '#')
+    .trim();
+
+  if (!clean) return false;
+
+  // 許容される純粋な巻数パターン
+  // 例: "13", "(13)", "（13）", "第13巻", "13巻", "#13", "volume 13", "volume13", "VOLUME.13", "vol 13", "vol.13", "Vol,13", "v.13", "上", "中", "下", "上巻", "中巻", "下巻", "第十三巻"
+  const purePattern =
+    /^[（(]?(?:[\s　・_/-]|第|vol\.?|v\.?|volume|#)*\s*(?:\d+|[一二三四五六七八九十]+|上|中|下)(?:\s*巻)?\s*[)）]?$/i;
+
+  return purePattern.test(clean);
+}
+
+/**
  * 文字列から巻数（数値）を抽出する
- * 算用数字・全角数字・漢数字・上中下に対応
+ * 算用数字・全角数字・漢数字・上中下・volume / vol / # 表記に対応
  */
 export function extractVolumeFromText(text: string): number | null {
   if (!text) return null;
@@ -64,10 +85,10 @@ export function extractVolumeFromText(text: string): number | null {
   if (clean === '中' || clean === '(中)' || clean === '（中）' || clean === '中巻') return 2;
   if (clean === '下' || clean === '(下)' || clean === '（下）' || clean === '下巻') return 3;
 
-  // 全角数字を半角に変換
-  const normalized = clean.replace(/[０-９]/g, (s) =>
-    String.fromCharCode(s.charCodeAt(0) - 0xfee0)
-  );
+  // 全角数字・記号を半角に正規化
+  const normalized = clean
+    .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xfee0))
+    .replace(/[＃]/g, '#');
 
   // パターン1: カッコ付き "(12)", "（12）"
   const matchParen = normalized.match(/^[（(]\s*(\d+)\s*[)）]$/);
@@ -76,17 +97,28 @@ export function extractVolumeFromText(text: string): number | null {
     if (!isNaN(num) && num > 0) return num;
   }
 
-  // パターン2: "第12巻", "12巻", "12", "vol.12"
-  const matchNum = normalized.match(/(?:第|vol\.?|v\.?|volume)?\s*(\d+)\s*(?:巻)?/i);
-  if (matchNum) {
-    const num = parseInt(matchNum[1], 10);
+  // パターン2: "volume 7", "volume7", "VOLUME.7", "Volume,7", "vol 7", "vol.7", "Vol,7", "v.7", "v7", "#7", "第12巻", "12巻"
+  const matchVolumeNotation = normalized.match(
+    /(?:第|volume|vol|v|[#])\s*[.,]?\s*(\d+)\s*(?:巻)?/i
+  );
+  if (matchVolumeNotation) {
+    const num = parseInt(matchVolumeNotation[1], 10);
     if (!isNaN(num) && num > 0) {
       return num;
     }
   }
 
-  // パターン3: 漢数字 "第十二巻", "十二巻", "十二"
-  const matchKanji = clean.match(/(?:第)?([一二三四五六七八九十]+)(?:巻)?/);
+  // パターン3: 単純な数字 "12", "12巻"
+  const matchSimpleNum = normalized.match(/^(\d+)\s*(?:巻)?$/);
+  if (matchSimpleNum) {
+    const num = parseInt(matchSimpleNum[1], 10);
+    if (!isNaN(num) && num > 0) {
+      return num;
+    }
+  }
+
+  // パターン4: 漢数字 "第十二巻", "十二巻", "十二"
+  const matchKanji = clean.match(/^(?:第)?([一二三四五六七八九十]+)(?:巻)?$/);
   if (matchKanji) {
     const num = parseKanjiNumber(matchKanji[1]);
     if (num !== null && num > 0) {
@@ -130,7 +162,7 @@ export function parseBookTitle(
   for (const candidate of sortedCandidates) {
     // 前方一致判定
     if (normalizedRaw.startsWith(candidate.normalizedTitle)) {
-      // 既存シリーズ名と前方一致した場合、残りの文字列から巻数を抽出
+      // 既存シリーズ名を除いた残りの文字列を抽出
       const rawPrefixMatch = trimmedTitle.slice(0, candidate.series.title.length);
       const isExactOrClosePrefix =
         normalizeForSearch(rawPrefixMatch) === candidate.normalizedTitle;
@@ -139,18 +171,18 @@ export function parseBookTitle(
         ? trimmedTitle.slice(candidate.series.title.length).trim()
         : trimmedTitle.slice(candidate.normalizedTitle.length).trim();
 
-      const extractedVolume = extractVolumeFromText(remainder);
-
-      // 残りの文字列から巻数が抽出できた場合のみ、そのシリーズへの紐付けを成立させる
-      if (extractedVolume !== null) {
-        return {
-          seriesTitle: candidate.series.title,
-          volume: extractedVolume,
-          existingSeries: candidate.series,
-        };
+      // 残りの文字列が「純粋な巻数表記のみ」で構成されている場合のみ紐付けを成立させる
+      // （「外伝」「ラブコメディが始まらない」などの文字が含まれている場合は不成立にして新規候補へ）
+      if (isPureVolumeRemainder(remainder)) {
+        const extractedVolume = extractVolumeFromText(remainder);
+        if (extractedVolume !== null) {
+          return {
+            seriesTitle: candidate.series.title,
+            volume: extractedVolume,
+            existingSeries: candidate.series,
+          };
+        }
       }
-      // 巻数が抽出できなかった場合（例: 『ONE PIECE FILM RED ノベライズ』など）は
-      // ①を失敗扱いとして紐付けず、②の末尾抽出へ進む
     }
   }
 
@@ -185,22 +217,26 @@ export function parseBookTitle(
     };
   }
 
-  // 3. 算用数字・全角数字（末尾）: "鬼滅の刃 1", "葬送のフリーレン 13", "作品名 第12巻", "作品名 12巻"
+  // 3. volume 形式 / # 形式 / 算用数字・全角数字（末尾）
+  // 例: "バーサス volume7", "バーサス volume 7", "バーサス vol.7", "バーサス #7", "鬼滅の刃 1", "葬送のフリーレン 13", "作品名 第12巻", "作品名 12巻"
   const trailingNumMatch = trimmedTitle.match(
-    /^(.*?)(?:[\s　・_/-]+|(?=[第]))(?:第\s*)?([0-9０-９]+)\s*(?:巻)?$/i
+    /^(.*?)(?:[\s　・_/-]+|(?=[第#＃vV]))(?:(?:第\s*)?([0-9０-９]+)\s*(?:巻)?|(?:volume|vol|v)[.,\s　]*([0-9０-９]+)|[#＃]\s*([0-9０-９]+))$/i
   );
   if (trailingNumMatch) {
     const prefix = trailingNumMatch[1].trim();
-    const rawNum = trailingNumMatch[2].replace(/[０-９]/g, (s) =>
-      String.fromCharCode(s.charCodeAt(0) - 0xfee0)
-    );
-    const vol = parseInt(rawNum, 10);
-    if (!isNaN(vol) && vol > 0) {
-      return {
-        seriesTitle: prefix || trimmedTitle,
-        volume: vol,
-        existingSeries: null,
-      };
+    const rawNum = trailingNumMatch[2] || trailingNumMatch[3] || trailingNumMatch[4];
+    if (rawNum) {
+      const cleanNum = rawNum.replace(/[０-９]/g, (s) =>
+        String.fromCharCode(s.charCodeAt(0) - 0xfee0)
+      );
+      const vol = parseInt(cleanNum, 10);
+      if (!isNaN(vol) && vol > 0) {
+        return {
+          seriesTitle: prefix || trimmedTitle,
+          volume: vol,
+          existingSeries: null,
+        };
+      }
     }
   }
 

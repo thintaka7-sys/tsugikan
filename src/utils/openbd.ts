@@ -39,25 +39,55 @@ export async function fetchBibliographicData(
     const summary = item.summary || {};
     const onix = item.onix || {};
 
-    const rawTitle: string = summary.title || '';
+    const rawSummaryTitle: string = summary.title || '';
     const publisher: string = summary.publisher || '';
 
-    // onix から collationkey（読みがな）を取得
-    // onix.DescriptiveDetail.TitleDetail.TitleElement.TitleText.collationkey
+    // ONIX の TitleDetail / TitleElement から主題名・副題・読みがなを構造化取得
+    let mainTitle = rawSummaryTitle;
+    let subtitle = '';
     let reading = '';
-    const titleDetail = onix.DescriptiveDetail?.TitleDetail;
-    const titleElement = titleDetail?.TitleElement;
-    if (titleElement?.TitleText?.collationkey) {
-      reading = String(titleElement.TitleText.collationkey).trim();
+
+    const rawTitleDetail = onix.DescriptiveDetail?.TitleDetail;
+    const titleDetail = Array.isArray(rawTitleDetail) ? rawTitleDetail[0] : rawTitleDetail;
+    const rawTitleElement = titleDetail?.TitleElement;
+    const titleElement = Array.isArray(rawTitleElement) ? rawTitleElement[0] : rawTitleElement;
+
+    if (titleElement) {
+      // 主題名
+      if (titleElement.TitleText) {
+        if (typeof titleElement.TitleText === 'object' && titleElement.TitleText.content) {
+          mainTitle = String(titleElement.TitleText.content).trim();
+          if (titleElement.TitleText.collationkey) {
+            reading = String(titleElement.TitleText.collationkey).trim();
+          }
+        } else if (typeof titleElement.TitleText === 'string') {
+          mainTitle = titleElement.TitleText.trim();
+        }
+      }
+
+      // 副題（サブタイトル）
+      if (titleElement.Subtitle) {
+        if (typeof titleElement.Subtitle === 'object' && titleElement.Subtitle.content) {
+          subtitle = String(titleElement.Subtitle.content).trim();
+        } else if (typeof titleElement.Subtitle === 'string') {
+          subtitle = titleElement.Subtitle.trim();
+        }
+      }
     }
 
-    if (!rawTitle) {
+    // 主題名に副題が含まれていない場合は結合
+    let fullTitle = mainTitle;
+    if (subtitle && !mainTitle.includes(subtitle)) {
+      fullTitle = `${mainTitle} ${subtitle}`.trim();
+    }
+
+    if (!fullTitle) {
       return null;
     }
 
     return {
       isbn: cleanIsbn,
-      title: rawTitle.trim(),
+      title: fullTitle,
       publisher: publisher.trim(),
       reading,
     };
